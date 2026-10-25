@@ -37,3 +37,15 @@ def test_inference_runs_and_returns_predictions(sample_df):
 
     print("✅ Inference pipeline test passed. Predictions:")
     print(preds_df[["predicted_price"]].head())
+
+
+def test_inference_accepts_null_numeric_features(sample_df):
+    """JSON null coordinates should become numeric missing values for XGBoost."""
+    sample_df = sample_df.copy()
+    sample_df["lat"] = None
+    sample_df["lng"] = None
+
+    preds_df = predict(sample_df)
+
+    assert len(preds_df) == len(sample_df)
+    assert pd.api.types.is_numeric_dtype(preds_df["predicted_price"])

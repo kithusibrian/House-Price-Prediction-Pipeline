@@ -103,6 +103,10 @@ def predict(
             df["city_encoded"] = df["city_full_encoded"]
         df = df.reindex(columns=expected_columns, fill_value=0)
 
+    # JSON null values arrive as object-typed pandas columns. Convert all
+    # model inputs to numeric dtypes so XGBoost accepts missing values.
+    df = df.apply(pd.to_numeric, errors="coerce")
+
     # Step 6: Load model & predict
     preds = model.predict(df)
 
