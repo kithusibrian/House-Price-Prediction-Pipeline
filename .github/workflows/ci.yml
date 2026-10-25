@@ -1,0 +1,62 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # AWS/ECR/ECS deployment is intentionally paused. Restore these steps
+      # when AWS deployment is ready.
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ secrets.AWS_REGION }}
+      #
+      # - name: Login to Amazon ECR
+      #   uses: aws-actions/amazon-ecr-login@v2
+      #
+      # - name: Build and push AWS images
+      #   run: |
+      #     # Restore the ECR build and push commands here.
+      #
+      # - name: Deploy AWS services
+      #   run: |
+      #     # Restore the ECS update-service commands here.
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push housing-api image
+        run: |
+          IMAGE_BASE=${{ secrets.DOCKERHUB_USERNAME }}/housing-api
+          docker build -t "$IMAGE_BASE:${GITHUB_SHA}" -t "$IMAGE_BASE:latest" -f Dockerfile .
+          docker push "$IMAGE_BASE:${GITHUB_SHA}"
+          docker push "$IMAGE_BASE:latest"
+
+      - name: Build and push housing-streamlit image
+        run: |
+          IMAGE_BASE=${{ secrets.DOCKERHUB_USERNAME }}/housing-streamlit
+          docker build -t "$IMAGE_BASE:${GITHUB_SHA}" -t "$IMAGE_BASE:latest" -f Dockerfile.streamlit .
+          docker push "$IMAGE_BASE:${GITHUB_SHA}"
+          docker push "$IMAGE_BASE:latest"
+
+      - name: Deploy housing-api to Render
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST "${{ secrets.RENDER_API_DEPLOY_HOOK_URL }}"
+
+      - name: Deploy housing-streamlit to Render
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST "${{ secrets.RENDER_STREAMLIT_DEPLOY_HOOK_URL }}"
