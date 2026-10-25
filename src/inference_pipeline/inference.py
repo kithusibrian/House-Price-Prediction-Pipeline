@@ -51,30 +51,34 @@ def predict(
 ) -> pd.DataFrame:
     model = load(model_path)
 
-    # Step 1: Preprocess raw input
-    df = clean_and_merge(input_df)
-    df = drop_duplicates(df)
-    df = remove_outliers(df)
+    df = input_df.copy()
+    is_raw_input = any(
+        column in df.columns for column in ("date", "zipcode", "city_full")
+    )
 
-    # Step 2: Feature engineering
-    if "date" in df.columns:
-        df = add_date_features(df)
+    if is_raw_input:
+        # Step 1: Preprocess raw input
+        df = clean_and_merge(df)
+        df = drop_duplicates(df)
+        df = remove_outliers(df)
 
-    # Step 3: Encodings ----------------
-    # Frequency encoding (zipcode)
-    if Path(freq_encoder_path).exists() and "zipcode" in df.columns:
-        freq_map = load(freq_encoder_path)
-        df["zipcode_freq"] = df["zipcode"].map(freq_map).fillna(0)
-        df = df.drop(columns=["zipcode"], errors="ignore")
+        # Step 2: Feature engineering
+        if "date" in df.columns:
+            df = add_date_features(df)
 
-    # Target encoding (city_full → city_encoded), matching the notebook schema.
-    if Path(target_encoder_path).exists() and "city_full" in df.columns:
-        target_encoder = load(target_encoder_path)
-        df["city_encoded"] = target_encoder.transform(df["city_full"])
-        df = df.drop(columns=["city_full"], errors="ignore")
+        # Step 3: Encodings
+        if Path(freq_encoder_path).exists() and "zipcode" in df.columns:
+            freq_map = load(freq_encoder_path)
+            df["zipcode_freq"] = df["zipcode"].map(freq_map).fillna(0)
+            df = df.drop(columns=["zipcode"], errors="ignore")
 
-    # Drop leakage columns
-    df, _ = drop_unused_columns(df.copy(), df.copy())
+        if Path(target_encoder_path).exists() and "city_full" in df.columns:
+            target_encoder = load(target_encoder_path)
+            df["city_encoded"] = target_encoder.transform(df["city_full"])
+            df = df.drop(columns=["city_full"], errors="ignore")
+
+        # Drop leakage columns
+        df, _ = drop_unused_columns(df.copy(), df.copy())
 
     # Step 4: Separate actuals if present
     y_true = None

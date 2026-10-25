@@ -19,6 +19,14 @@ HOLDOUT_META_PATH = ensure_artifact(
     "data/processed/cleaning_holdout.csv", PROJECT_ROOT
 )
 
+
+def prediction_payload(df: pd.DataFrame) -> list[dict]:
+    """Convert dashboard rows into strict JSON-safe prediction records."""
+    sanitized = df.replace([float("inf"), float("-inf")], pd.NA)
+    sanitized = sanitized.astype(object).where(pd.notna(sanitized), None)
+    return sanitized.to_dict(orient="records")
+
+
 # ============================
 # Data loading
 # ============================
@@ -28,7 +36,10 @@ def load_data():
     meta = pd.read_csv(HOLDOUT_META_PATH, parse_dates=["date"])[["date", "city_full"]]
 
     if len(fe) != len(meta):
-        st.warning("⚠️ Engineered and meta holdout lengths differ. Aligning by index.")
+        st.warning(
+            ":material/warning: Engineered and metadata holdout lengths differ. "
+            "Aligning by index."
+        )
         min_len = min(len(fe), len(meta))
         fe = fe.iloc[:min_len].copy()
         meta = meta.iloc[:min_len].copy()
@@ -47,7 +58,7 @@ fe_df, disp_df = load_data()
 # ============================
 # UI
 # ============================
-st.title("🏠 Housing Price Prediction — Holdout Explorer")
+st.title(":material/real_estate_agent: Housing Price Prediction — Holdout Explorer")
 
 years = sorted(disp_df["year"].unique())
 months = list(range(1, 13))
@@ -55,13 +66,13 @@ regions = ["All"] + sorted(disp_df["region"].dropna().unique())
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    year = st.selectbox("Select Year", years, index=0)
+    year = st.selectbox(":material/calendar_month: Select Year", years, index=0)
 with col2:
-    month = st.selectbox("Select Month", months, index=0)
+    month = st.selectbox(":material/event: Select Month", months, index=0)
 with col3:
-    region = st.selectbox("Select Region", regions, index=0)
+    region = st.selectbox(":material/location_on: Select Region", regions, index=0)
 
-if st.button("Show Predictions 🚀"):
+if st.button("Show Predictions", icon=":material/rocket_launch:"):
     mask = (disp_df["year"] == year) & (disp_df["month"] == month)
     if region != "All":
         mask &= (disp_df["region"] == region)
@@ -69,11 +80,14 @@ if st.button("Show Predictions 🚀"):
     idx = disp_df.index[mask]
 
     if len(idx) == 0:
-        st.warning("No data found for these filters.")
+        st.warning(":material/search_off: No data found for these filters.")
     else:
-        st.write(f"📅 Running predictions for **{year}-{month:02d}** | Region: **{region}**")
+        st.write(
+            f":material/calendar_month: Running predictions for "
+            f"**{year}-{month:02d}** | Region: **{region}**"
+        )
 
-        payload = fe_df.loc[idx].to_dict(orient="records")
+        payload = prediction_payload(fe_df.loc[idx])
 
         try:
             resp = requests.post(API_URL, json=payload, timeout=60)
@@ -94,7 +108,7 @@ if st.button("Show Predictions 🚀"):
             rmse = ((view["prediction"] - view["actual_price"]) ** 2).mean() ** 0.5
             avg_pct_error = ((view["prediction"] - view["actual_price"]).abs() / view["actual_price"]).mean() * 100
 
-            st.subheader("Predictions vs Actuals")
+            st.subheader(":material/compare_arrows: Predictions vs Actuals")
             st.dataframe(
                 view[["date", "region", "actual_price", "prediction"]].reset_index(drop=True),
                 use_container_width=True
@@ -114,7 +128,7 @@ if st.button("Show Predictions 🚀"):
             if region == "All":
                 yearly_data = disp_df[disp_df["year"] == year].copy()
                 idx_all = yearly_data.index
-                payload_all = fe_df.loc[idx_all].to_dict(orient="records")
+                payload_all = prediction_payload(fe_df.loc[idx_all])
 
                 resp_all = requests.post(API_URL, json=payload_all, timeout=60)
                 resp_all.raise_for_status()
@@ -125,7 +139,7 @@ if st.button("Show Predictions 🚀"):
             else:
                 yearly_data = disp_df[(disp_df["year"] == year) & (disp_df["region"] == region)].copy()
                 idx_region = yearly_data.index
-                payload_region = fe_df.loc[idx_region].to_dict(orient="records")
+                payload_region = prediction_payload(fe_df.loc[idx_region])
 
                 resp_region = requests.post(API_URL, json=payload_region, timeout=60)
                 resp_region.raise_for_status()
@@ -162,8 +176,10 @@ if st.button("Show Predictions 🚀"):
             st.plotly_chart(fig, use_container_width=True)
 
         except Exception as e:
-            st.error(f"API call failed: {e}")
+            st.error(f":material/error: API call failed: {e}")
             st.exception(e)
 
 else:
-    st.info("Choose filters and click **Show Predictions** to compute.")
+    st.info(
+        ":material/tune: Choose filters and click **Show Predictions** to compute."
+    )
