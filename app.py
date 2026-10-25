@@ -27,6 +27,22 @@ def prediction_payload(df: pd.DataFrame) -> list[dict]:
     return sanitized.to_dict(orient="records")
 
 
+def render_metric_card(column, icon: str, label: str, value: str) -> None:
+    with column:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">
+                    <span class="material-symbols-rounded">{icon}</span>
+                    {label}
+                </div>
+                <div class="metric-value">{value}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 # ============================
 # Data loading
 # ============================
@@ -98,6 +114,11 @@ if st.button("Show Predictions", icon=":material/rocket_launch:"):
 
             view = disp_df.loc[idx, ["date", "region", "actual_price"]].copy()
             view = view.sort_values("date")
+            if len(preds) != len(view):
+                raise ValueError(
+                    f"Prediction response contained {len(preds)} values for "
+                    f"{len(view)} requested rows."
+                )
             view["prediction"] = pd.Series(preds, index=view.index).astype(float)
 
             if actuals is not None and len(actuals) == len(view):
@@ -114,41 +135,53 @@ if st.button("Show Predictions", icon=":material/rocket_launch:"):
                 use_container_width=True
             )
 
+            st.markdown(
+                """
+                <style>
+                .metric-card {
+                    border: 1px solid rgba(49, 51, 63, 0.2);
+                    border-radius: 0.5rem;
+                    padding: 1rem;
+                    min-height: 5rem;
+                }
+                .metric-label {
+                    color: #5f6368;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                }
+                .metric-label span {
+                    font-size: 1rem;
+                    vertical-align: -0.15rem;
+                    margin-right: 0.25rem;
+                }
+                .metric-value {
+                    color: #1f2937;
+                    font-size: 1.45rem;
+                    font-weight: 700;
+                    margin-top: 0.35rem;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
             c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("MAE", f"{mae:,.0f}")
-            with c2:
-                st.metric("RMSE", f"{rmse:,.0f}")
-            with c3:
-                st.metric("Avg % Error", f"{avg_pct_error:.2f}%")
+            render_metric_card(c1, "error_outline", "MAE", f"{mae:,.0f}")
+            render_metric_card(c2, "monitoring", "RMSE", f"{rmse:,.0f}")
+            render_metric_card(c3, "percent", "Avg % Error", f"{avg_pct_error:.2f}%")
 
             # ============================
             # Yearly Trend Chart
             # ============================
-            if region == "All":
-                yearly_data = disp_df[disp_df["year"] == year].copy()
-                idx_all = yearly_data.index
-                payload_all = prediction_payload(fe_df.loc[idx_all])
-
-                resp_all = requests.post(API_URL, json=payload_all, timeout=60)
-                resp_all.raise_for_status()
-                preds_all = resp_all.json().get("predictions", [])
-
-                yearly_data["prediction"] = pd.Series(preds_all, index=yearly_data.index).astype(float)
-
-            else:
-                yearly_data = disp_df[(disp_df["year"] == year) & (disp_df["region"] == region)].copy()
-                idx_region = yearly_data.index
-                payload_region = prediction_payload(fe_df.loc[idx_region])
-
-                resp_region = requests.post(API_URL, json=payload_region, timeout=60)
-                resp_region.raise_for_status()
-                preds_region = resp_region.json().get("predictions", [])
-
-                yearly_data["prediction"] = pd.Series(preds_region, index=yearly_data.index).astype(float)
-
-            # Aggregate by month
-            monthly_avg = yearly_data.groupby("month")[["actual_price", "prediction"]].mean().reset_index()
+            # Avoid a second request for every row in the year. For all regions,
+            # that payload can contain tens of thousands of rows and exceed the
+            # Render proxy timeout. The selected month's prediction is already
+            # available from the request above.
+            yearly_data = disp_df[disp_df["year"] == year].copy()
+            if region != "All":
+                yearly_data = yearly_data[yearly_data["region"] == region]
+            monthly_avg = yearly_data.groupby("month")[["actual_price"]].mean().reset_index()
+            monthly_avg["prediction"] = float("nan")
+            monthly_avg.loc[monthly_avg["month"] == month, "prediction"] = view["prediction"].mean()
 
             # Highlight selected month
             monthly_avg["highlight"] = monthly_avg["month"].apply(lambda m: "Selected" if m == month else "Other")
@@ -159,7 +192,10 @@ if st.button("Show Predictions", icon=":material/rocket_launch:"):
                 y=["actual_price", "prediction"],
                 markers=True,
                 labels={"value": "Price", "month": "Month"},
-                title=f"Yearly Trend — {year}{'' if region=='All' else f' — {region}'}"
+                title=(
+                    f"Yearly Actual Trend with Selected Prediction — {year}"
+                    f"{'' if region == 'All' else f' — {region}'}"
+                )
             )
 
             # Add highlight with background shading
