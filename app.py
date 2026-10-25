@@ -130,10 +130,18 @@ if st.button("Show Predictions", icon=":material/rocket_launch:"):
             avg_pct_error = ((view["prediction"] - view["actual_price"]).abs() / view["actual_price"]).mean() * 100
 
             st.subheader(":material/compare_arrows: Predictions vs Actuals")
-            st.dataframe(
-                view[["date", "region", "actual_price", "prediction"]].reset_index(drop=True),
-                use_container_width=True
+            display_view = view[
+                ["date", "region", "actual_price", "prediction"]
+            ].reset_index(drop=True)
+            display_view["date"] = pd.to_datetime(
+                display_view["date"], errors="coerce"
+            ).dt.strftime("%Y-%m-%d")
+            display_view[["actual_price", "prediction"]] = (
+                display_view[["actual_price", "prediction"]]
+                .replace([float("inf"), float("-inf")], pd.NA)
+                .apply(pd.to_numeric, errors="coerce")
             )
+            st.dataframe(display_view, use_container_width=True)
 
             st.markdown(
                 """
